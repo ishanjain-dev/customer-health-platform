@@ -12,6 +12,8 @@ migrations run, and the rollback steps.
 
 ### Added
 
+- Architecture diagram in the README (`docs/images/architecture.png`) (#4).
+
 - Repository scaffolding (Sprint 0): root `.gitignore` and `.gitattributes`, `CLAUDE.md`,
   issue and pull request templates, `CODEOWNERS`, CI and deployment workflow skeletons,
   Dependabot, pre-commit configuration, `Makefile`, `.env.example` and the monorepo
