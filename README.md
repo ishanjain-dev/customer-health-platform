@@ -13,15 +13,11 @@ incident write-ups. All data is synthetic.
 
 ## Architecture
 
-```
- Salesforce (CRM) ──┐                                         ┌──> Salesforce: health fields,
- Product usage ─────┼──> raw ──> staging ──> intermediate ──> marts ──> alerts, tasks, LWC,
- Billing ───────────┘          (dbt, one project)          │   reports, dashboard
-                                                           └──> OPS tables, status page
- Orchestration: GitHub Actions · Warehouse: DuckDB (build) → Snowflake (30-day window) → MotherDuck
-```
+![CHP architecture: Salesforce, product usage and billing feed Python ingestion jobs on GitHub Actions; the warehouse models raw, staging and marts with dbt; a reverse ETL job upserts health results to the Salesforce Account, which drives alerts, tasks and the LWC card](docs/images/architecture.png)
 
-Completed follow-up tasks in Salesforce flow back into the next day's data. Details in
+Orchestration runs on GitHub Actions. The warehouse is DuckDB during the build, Snowflake
+for the 30-day production window, then MotherDuck (free); the pipeline code and dbt project
+are identical on all three. Completed follow-up tasks in Salesforce flow back into the next day's data. Details in
 [docs/02-architecture.md](docs/02-architecture.md) (written in Sprint 0).
 
 ## Repository layout
