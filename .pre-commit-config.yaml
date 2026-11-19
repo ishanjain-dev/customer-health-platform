@@ -1,0 +1,56 @@
+# Repo-wide hooks (spec section 6): ruff, sqlfluff, prettier, detect-secrets.
+# Do NOT run `pre-commit install`: husky owns core.hooksPath and calls `pre-commit run`
+# from salesforce/.husky/pre-commit. salesforce/ is formatted by its own lint-staged
+# (Prettier with the Apex and XML plugins), so it is excluded from the formatters here.
+# CI runs `pre-commit run --all-files` in ci-python.yml.
+
+# The build spec is a binary PDF export; never reformat or size-check it.
+exclude: ^docs/00-build-spec\.pdf$
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-yaml
+      - id: check-json
+        exclude: ^salesforce/(\.vscode|jsconfig)
+      - id: detect-private-key
+      - id: end-of-file-fixer
+        exclude: ^salesforce/
+      - id: trailing-whitespace
+        exclude: ^salesforce/
+
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: [--baseline, .secrets.baseline]
+        exclude: package-lock\.json$
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.17.5
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/sqlfluff/sqlfluff
+    rev: 4.5.0
+    hooks:
+      # The dbt templater and .sqlfluff config arrive with the dbt project (Sprint 2).
+      - id: sqlfluff-lint
+        files: ^warehouse/
+
+  - repo: local
+    hooks:
+      - id: prettier
+        name: prettier (outside salesforce/)
+        language: node
+        entry: prettier --write --ignore-unknown
+        additional_dependencies: ["prettier@3.10.1"]
+        types_or: [markdown, yaml, json]
+        exclude: ^salesforce/

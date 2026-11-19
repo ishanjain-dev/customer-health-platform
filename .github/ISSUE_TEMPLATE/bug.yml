@@ -1,0 +1,59 @@
+name: Bug
+description: Something behaves differently from the spec or the acceptance criteria
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Observed behaviour. Do not paste secrets, tokens or contact details.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: Reference the FR/NFR ID or spec section where possible.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. chp run-day --date 2026-12-01
+        2. …
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options:
+        - DEV (scratch org / local DuckDB)
+        - QA
+        - PROD
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - area:salesforce
+        - area:ingestion
+        - area:dbt
+        - area:reverse-etl
+        - area:ops
+        - area:docs
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs, run links or screenshots
+      description: Redact anything sensitive.
+    validations:
+      required: false

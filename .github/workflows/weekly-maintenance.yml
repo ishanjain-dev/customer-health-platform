@@ -1,0 +1,38 @@
+# Weekly maintenance, Sundays (spec section 13.7): Salesforce archive job, full reconciliation,
+# dbt docs to Pages, expired scratch org cleanup, Snowflake cost summary (during the window).
+# The schedule stays commented out until the go-live gate (spec section 16).
+name: weekly-maintenance
+
+on:
+  # schedule:
+  #   - cron: "13 22 * * 6" # Saturday 22:13 UTC = Sunday 03:43 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-maintenance
+  cancel-in-progress: false
+
+jobs:
+  maintenance:
+    name: weekly maintenance
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: prod-run
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # TODO(CHP, Sprint 4): replace placeholders with chp CLI commands.
+      - name: Salesforce archive-then-delete (spec 7.1)
+        run: echo "TODO uv run chp ops archive"
+      - name: Full reconciliation
+        run: echo "TODO uv run chp ops reconcile --full"
+      - name: dbt docs generate (published to Pages by a separate job)
+        run: echo "TODO dbt docs generate"
+      - name: Delete expired scratch orgs
+        run: echo "TODO sf org list --clean"
+      - name: Snowflake cost summary (Snowflake window only)
+        run: echo "TODO uv run chp ops cost-summary"

@@ -1,0 +1,137 @@
+# Salesforce CI (spec section 15): Prettier, ESLint and LWC Jest; Salesforce Code Analyzer
+# (fails on severity 1-2); scratch org deploy + Apex tests, with the scratch org deleted at the end.
+# Jobs always run so they can be required checks; steps skip until there is metadata to test.
+name: ci-salesforce
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-salesforce-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lwc:
+    name: prettier, eslint, LWC Jest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: salesforce
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: salesforce/package-lock.json
+      - name: Install
+        run: npm ci
+      - name: Prettier
+        run: npm run prettier:verify
+      - name: ESLint (LWC and Aura)
+        run: |
+          if find force-app -path '*/lwc/*.js' -o -path '*/aura/*.js' | grep -q .; then
+            npm run lint
+          else
+            echo "::notice::No LWC or Aura JavaScript yet; ESLint skipped."
+          fi
+      - name: LWC Jest
+        run: npx sfdx-lwc-jest -- --passWithNoTests
+
+  code-analyzer:
+    name: Salesforce Code Analyzer
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Detect metadata
+        id: detect
+        run: |
+          if find salesforce/force-app -type f -name '*.cls' -o -type f -name '*.trigger' -o -type f -path '*/lwc/*.js' | grep -q .; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No Apex or LWC yet; Code Analyzer skipped."
+          fi
+      - if: steps.detect.outputs.present == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Install sf CLI and Code Analyzer
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          npm install --global @salesforce/cli
+          sf plugins install code-analyzer
+      - name: Run Code Analyzer (fail on severity 1-2)
+        if: steps.detect.outputs.present == 'true'
+        working-directory: salesforce
+        run: sf code-analyzer run --target force-app --severity-threshold 2
+
+  apex:
+    name: scratch org deploy and Apex tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DEVHUB_AUTH_URL: ${{ secrets.DEVHUB_AUTH_URL }}
+    defaults:
+      run:
+        working-directory: salesforce
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Detect metadata and Dev Hub secret
+        id: detect
+        run: |
+          if ! find force-app -type f | grep -q .; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No Salesforce metadata yet; scratch org validation skipped."
+          elif [ -z "$DEVHUB_AUTH_URL" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::DEVHUB_AUTH_URL secret is not set; scratch org validation skipped."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.detect.outputs.run == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Install sf CLI
+        if: steps.detect.outputs.run == 'true'
+        run: npm install --global @salesforce/cli
+      - name: Authorise Dev Hub
+        if: steps.detect.outputs.run == 'true'
+        run: |
+          umask 077
+          printf '%s' "$DEVHUB_AUTH_URL" > "$RUNNER_TEMP/devhub.txt"
+          sf org login sfdx-url --sfdx-url-file "$RUNNER_TEMP/devhub.txt" --alias devhub --set-default-dev-hub
+          rm -f "$RUNNER_TEMP/devhub.txt"
+      # TODO(CHP, Sprint 1): if the scratch org allowance is reached, fall back to
+      # `sf project deploy validate` against the QA org with tests (spec section 15).
+      - name: Create scratch org (1 day)
+        if: steps.detect.outputs.run == 'true'
+        run: >
+          sf org create scratch --definition-file config/project-scratch-def.json
+          --alias ci --set-default --duration-days 1 --wait 15
+      - name: Deploy
+        if: steps.detect.outputs.run == 'true'
+        run: sf project deploy start --source-dir force-app --wait 30
+      - name: Apex tests (coverage >= 90%)
+        if: steps.detect.outputs.run == 'true'
+        run: >
+          sf apex run test --test-level RunLocalTests --code-coverage
+          --result-format human --wait 30
+      # TODO(CHP, Sprint 1): enforce the 90% org-wide coverage gate on the test result JSON.
+      - name: Delete scratch org
+        if: always() && steps.detect.outputs.run == 'true'
+        run: sf org delete scratch --target-org ci --no-prompt || true

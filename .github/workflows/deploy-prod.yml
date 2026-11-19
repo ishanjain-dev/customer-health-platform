@@ -1,0 +1,64 @@
+# Deploy to PROD on a release tag v*. The "prod" GitHub Environment has the owner as
+# required reviewer, so this job pauses for approval (spec sections 5 and 14.2).
+name: deploy-prod
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  salesforce:
+    name: deploy Salesforce metadata to PROD
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: prod
+    env:
+      SF_DEPLOY_AUTH_URL: ${{ secrets.SF_DEPLOY_AUTH_URL }}
+    defaults:
+      run:
+        working-directory: salesforce
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Detect metadata and deploy secret
+        id: detect
+        run: |
+          if ! find force-app -type f | grep -q .; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No Salesforce metadata in this tag; PROD deploy skipped."
+          elif [ -z "$SF_DEPLOY_AUTH_URL" ]; then
+            echo "::error::SF_DEPLOY_AUTH_URL is not set in the prod environment."
+            exit 1
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.detect.outputs.run == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Install sf CLI
+        if: steps.detect.outputs.run == 'true'
+        run: npm install --global @salesforce/cli
+      - name: Authorise PROD org
+        if: steps.detect.outputs.run == 'true'
+        run: |
+          umask 077
+          printf '%s' "$SF_DEPLOY_AUTH_URL" > "$RUNNER_TEMP/prod.txt"
+          sf org login sfdx-url --sfdx-url-file "$RUNNER_TEMP/prod.txt" --alias prod
+          rm -f "$RUNNER_TEMP/prod.txt"
+      - name: Deploy with local tests
+        if: steps.detect.outputs.run == 'true'
+        run: >
+          sf project deploy start --source-dir force-app --target-org prod
+          --test-level RunLocalTests --wait 30
+
+  # TODO(CHP): warehouse migrations (schemachange / DuckDB runner) and dbt deploy for PROD,
+  # then a GitHub release generated from CHANGELOG.md (needs contents: write on that job only).

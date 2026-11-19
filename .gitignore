@@ -1,0 +1,70 @@
+# Customer Health Platform: root ignore rules.
+# Component folders may add their own .gitignore (e.g. salesforce/.gitignore).
+
+# --- Secrets and keys (spec section 14.2) -------------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.jks
+*.crt
+*.csr
+*.srl
+server.key*
+id_rsa*
+id_ed25519*
+# Real dbt profiles carry credentials; only the example is committed
+warehouse/dbt/profiles.yml
+
+# --- Salesforce CLI state (contains org auth references) ------------------
+.sf/
+.sfdx/
+.localdevserver/
+
+# --- Node ------------------------------------------------------------------
+node_modules/
+npm-debug.log*
+.eslintcache
+
+# --- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# --- Warehouse / dbt -------------------------------------------------------
+warehouse/local/*
+!warehouse/local/.gitkeep
+*.duckdb
+*.duckdb.wal
+warehouse/dbt/target/
+warehouse/dbt/dbt_packages/
+warehouse/dbt/logs/
+
+# --- Generator output (regenerated deterministically, spec 9.2) ----------------
+pipelines/output/
+
+# --- Test / coverage output -----------------------------------------------------
+coverage/
+logs/
+*.log
+
+# --- OS / editor -------------------------------------------------------------
+.DS_Store
+Thumbs.db
+ehthumbs.db
+[Dd]esktop.ini
+.idea/

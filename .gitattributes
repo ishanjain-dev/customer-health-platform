@@ -1,0 +1,14 @@
+# Normalise line endings to LF in the repo and the working tree.
+# Hook scripts run under sh and Prettier expects LF; autocrlf on Windows would break both.
+* text=auto eol=lf
+
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files
+*.pdf binary
+*.png binary
+*.jpg binary
+*.gz binary
+*.duckdb binary

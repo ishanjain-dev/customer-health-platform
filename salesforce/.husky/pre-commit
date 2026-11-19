@@ -1,0 +1,15 @@
+# Git runs this from the repository root (husky: core.hooksPath=salesforce/.husky/_).
+
+# 1. Salesforce project: lint-staged (Prettier with Apex/XML plugins, ESLint, related LWC Jest tests).
+(cd salesforce && npm run precommit) || exit 1
+
+# 2. Rest of the repo: pre-commit framework hooks on staged files
+#    (detect-secrets, ruff, sqlfluff, prettier). Secret scanning is mandatory, so fail if unavailable.
+if command -v pre-commit >/dev/null 2>&1; then
+  pre-commit run
+elif command -v uvx >/dev/null 2>&1; then
+  uvx pre-commit run
+else
+  echo "pre-commit not found. Install uv (https://docs.astral.sh/uv/) and run 'make setup'." >&2
+  exit 1
+fi

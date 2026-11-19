@@ -1,0 +1,66 @@
+name: User story
+description: A unit of user-visible value, sized to fit in one sprint
+title: "[Story] "
+labels: ["story"]
+body:
+  - type: textarea
+    id: story
+    attributes:
+      label: User story
+      description: As a … I want … so that …
+      placeholder: |
+        As a CSM,
+        I want …
+        so that …
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: One checkbox per testable criterion.
+      value: |
+        - [ ] Given … when … then …
+        - [ ] …
+    validations:
+      required: true
+  - type: input
+    id: requirements
+    attributes:
+      label: Linked requirements
+      description: FR / NFR IDs from the build spec (section 2).
+      placeholder: FR-04, NFR-04
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Also add the matching area label.
+      multiple: true
+      options:
+        - area:salesforce
+        - area:ingestion
+        - area:dbt
+        - area:reverse-etl
+        - area:ops
+        - area:docs
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes and dependencies
+      description: Design notes, owner manual steps (spec section 17), blocking issues.
+    validations:
+      required: false
+  - type: checkboxes
+    id: dod
+    attributes:
+      label: Definition of done
+      options:
+        - label: Code merged to main through a reviewed pull request
+        - label: Unit or model tests added and passing in CI
+        - label: Deployed to QA and verified against the acceptance criteria
+        - label: Docs updated (data dictionary, runbook, README or ADR as relevant)
+        - label: No new secrets, no new paid features, Salesforce storage and API budget unchanged or recorded

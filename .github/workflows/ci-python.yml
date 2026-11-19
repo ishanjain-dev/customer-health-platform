@@ -1,0 +1,74 @@
+# Python CI: lint, type-check and unit tests for the chp package (spec sections 6 and 15),
+# plus repo-wide pre-commit hooks (detect-secrets, ruff, sqlfluff, prettier).
+# Jobs always run so they can be required checks; component steps skip until the code exists.
+name: ci-python
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-python-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  hygiene:
+    name: pre-commit (detect-secrets, lint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Run pre-commit on all files
+        run: uvx pre-commit run --all-files --show-diff-on-failure
+
+  python:
+    name: lint, type-check, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Detect chp package
+        id: detect
+        run: |
+          if [ -f pipelines/pyproject.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::pipelines/pyproject.toml not found; Python checks skipped until the chp package exists."
+          fi
+      - if: steps.detect.outputs.present == 'true'
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - if: steps.detect.outputs.present == 'true'
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Install
+        if: steps.detect.outputs.present == 'true'
+        working-directory: pipelines
+        run: uv sync --locked
+      - name: Ruff
+        if: steps.detect.outputs.present == 'true'
+        working-directory: pipelines
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Mypy (strict on src/)
+        if: steps.detect.outputs.present == 'true'
+        working-directory: pipelines
+        run: uv run mypy --strict src/
+      - name: Pytest (coverage >= 80% on src/chp)
+        if: steps.detect.outputs.present == 'true'
+        working-directory: pipelines
+        run: uv run pytest --cov=chp --cov-fail-under=80

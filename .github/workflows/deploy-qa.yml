@@ -1,0 +1,68 @@
+# Deploy to QA on every merge to main, then run one full run-day against QA (spec sections 5 and 15).
+# Secrets come from the GitHub Environment "qa" only.
+name: deploy-qa
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-qa
+  cancel-in-progress: false
+
+jobs:
+  salesforce:
+    name: deploy Salesforce metadata to QA
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: qa
+    env:
+      SF_DEPLOY_AUTH_URL: ${{ secrets.SF_DEPLOY_AUTH_URL }}
+    defaults:
+      run:
+        working-directory: salesforce
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Detect metadata and deploy secret
+        id: detect
+        run: |
+          if ! find force-app -type f | grep -q .; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No Salesforce metadata yet; QA deploy skipped."
+          elif [ -z "$SF_DEPLOY_AUTH_URL" ]; then
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::SF_DEPLOY_AUTH_URL is not set in the qa environment; QA deploy skipped."
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.detect.outputs.run == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Install sf CLI
+        if: steps.detect.outputs.run == 'true'
+        run: npm install --global @salesforce/cli
+      - name: Authorise QA org
+        if: steps.detect.outputs.run == 'true'
+        run: |
+          umask 077
+          printf '%s' "$SF_DEPLOY_AUTH_URL" > "$RUNNER_TEMP/qa.txt"
+          sf org login sfdx-url --sfdx-url-file "$RUNNER_TEMP/qa.txt" --alias qa
+          rm -f "$RUNNER_TEMP/qa.txt"
+      - name: Deploy with local tests
+        if: steps.detect.outputs.run == 'true'
+        run: >
+          sf project deploy start --source-dir force-app --target-org qa
+          --test-level RunLocalTests --wait 30
+
+  # TODO(CHP, Sprint 3): integration run-day against QA Salesforce and the QA warehouse.
+  # integration:
+  #   needs: salesforce
+  #   environment: qa
+  #   steps: uv run chp run-day --date <yesterday IST>

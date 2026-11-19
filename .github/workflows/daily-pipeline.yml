@@ -1,0 +1,130 @@
+# The scheduled production run (spec section 13.1). 01:17 IST daily, business date = yesterday IST.
+# Uses the "prod-run" environment: PROD secrets, no approval gate.
+# The schedule stays commented out until the go-live gate (spec section 16); run it by hand until then.
+name: daily-pipeline
+
+on:
+  # schedule:
+  #   - cron: "47 19 * * *" # 19:47 UTC = 01:17 IST; off-the-hour to avoid busy slots
+  workflow_dispatch:
+    inputs:
+      date:
+        description: Business date to (re)run, YYYY-MM-DD. Defaults to yesterday in IST.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-prod
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: run-day
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: prod-run
+    outputs:
+      business_date: ${{ steps.date.outputs.business_date }}
+      failed_step: ${{ steps.failed.outputs.step }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Resolve business date
+        id: date
+        env:
+          INPUT_DATE: ${{ inputs.date }}
+        run: |
+          if [ -n "$INPUT_DATE" ]; then
+            d="$INPUT_DATE"
+          else
+            d="$(TZ=Asia/Kolkata date -d yesterday +%F)"
+          fi
+          if ! printf '%s' "$d" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
+            echo "::error::Invalid date '$d'"; exit 1
+          fi
+          echo "business_date=$d" >> "$GITHUB_OUTPUT"
+          echo "Business date: $d"
+      - name: Detect chp package
+        id: detect
+        run: |
+          if [ -f pipelines/pyproject.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::chp package not built yet; pipeline steps skipped."
+          fi
+      # TODO(CHP, Sprint 2-4): replace each placeholder with the chp CLI command.
+      - name: 1. Preflight (config, Salesforce /limits, warehouse reachable)
+        id: preflight
+        if: steps.detect.outputs.present == 'true'
+        run: echo "TODO uv run chp ops preflight --date ${{ steps.date.outputs.business_date }}"
+      - name: 2. Generate (usage, billing, CRM activity)
+        id: generate
+        if: steps.detect.outputs.present == 'true'
+        run: echo "TODO uv run chp generate --date ${{ steps.date.outputs.business_date }}"
+      - name: 3. Extract and load
+        id: extract-load
+        if: steps.detect.outputs.present == 'true'
+        run: echo "TODO uv run chp extract / chp load --date ${{ steps.date.outputs.business_date }}"
+      - name: 4. Transform (dbt source freshness, snapshot, build)
+        id: transform
+        if: steps.detect.outputs.present == 'true'
+        run: echo "TODO dbt source freshness && dbt snapshot && dbt build"
+      - name: 5. Reverse ETL (subscriptions, commercial, health)
+        id: reverse-etl
+        if: steps.detect.outputs.present == 'true'
+        run: echo "TODO uv run chp reverse-etl --date ${{ steps.date.outputs.business_date }}"
+      - name: 6. Ops (reconciliation, run summary, status page)
+        id: ops
+        if: steps.detect.outputs.present == 'true'
+        run: echo "TODO uv run chp ops reconcile / status-page"
+      - name: Record failed step
+        id: failed
+        if: failure()
+        env:
+          OUTCOMES: >-
+            preflight=${{ steps.preflight.outcome }}
+            generate=${{ steps.generate.outcome }}
+            extract-load=${{ steps.extract-load.outcome }}
+            transform=${{ steps.transform.outcome }}
+            reverse-etl=${{ steps.reverse-etl.outcome }}
+            ops=${{ steps.ops.outcome }}
+        run: |
+          step=other
+          for pair in $OUTCOMES; do
+            if [ "${pair#*=}" = "failure" ]; then step="${pair%%=*}"; break; fi
+          done
+          echo "step=$step" >> "$GITHUB_OUTPUT"
+
+  # TODO(CHP, Sprint 4): status-page job (contents: write) committing docs/status to gh-pages.
+
+  incident:
+    name: open or update incident issue
+    needs: run
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or comment on incident
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BUSINESS_DATE: ${{ needs.run.outputs.business_date }}
+          FAILED_STEP: ${{ needs.run.outputs.failed_step }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          date_label="${BUSINESS_DATE:-unknown-date}"
+          step="${FAILED_STEP:-unknown}"
+          body="$(printf 'Daily run failed.\n\n- Business date: %s\n- Failed step: %s\n- Run: %s\n\nTriage per docs/runbooks/failed-run.md.' "$date_label" "$step" "$RUN_URL")"
+          existing="$(gh issue list --label incident --state open --search "in:title $date_label" --json number --jq '.[0].number // empty')"
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "[Incident] $date_label daily run failed at $step" --label incident --body "$body"
+          fi

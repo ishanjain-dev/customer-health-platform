@@ -1,0 +1,57 @@
+# dbt CI: compile, sqlfluff lint and a full dbt build on DuckDB against fixture data
+# (spec sections 11.4 and 15). Skips until warehouse/dbt/dbt_project.yml exists.
+name: ci-dbt
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-dbt-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dbt:
+    name: dbt build on DuckDB
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Detect dbt project
+        id: detect
+        run: |
+          if [ -f warehouse/dbt/dbt_project.yml ] && [ -f pipelines/pyproject.toml ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::dbt project or chp package not found; dbt checks skipped until they exist."
+          fi
+      - if: steps.detect.outputs.present == 'true'
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - if: steps.detect.outputs.present == 'true'
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Install
+        if: steps.detect.outputs.present == 'true'
+        run: uv sync --locked --project pipelines
+      # TODO(CHP, dbt story): confirm target name and fixture-loading command when the dbt project lands.
+      - name: dbt deps, build (models, tests, unit tests) on DuckDB
+        if: steps.detect.outputs.present == 'true'
+        working-directory: warehouse/dbt
+        env:
+          DBT_PROFILES_DIR: ${{ github.workspace }}/warehouse/dbt
+        run: |
+          cp profiles.example.yml profiles.yml
+          uv run --project ../../pipelines dbt deps
+          uv run --project ../../pipelines dbt build --target dev --fail-fast
+      - name: sqlfluff lint
+        if: steps.detect.outputs.present == 'true'
+        working-directory: warehouse/dbt
+        run: uv run --project ../../pipelines sqlfluff lint models
